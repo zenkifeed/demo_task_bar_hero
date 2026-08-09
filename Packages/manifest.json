@@ -35,7 +35,9 @@
     "com.unity.modules.wind": "1.0.0",
     "com.unity.modules.xr": "1.0.0",
     "com.ivanmurzak.unity.mcp": "0.87.0",
-    "com.ivanmurzak.unity.mcp.tilemap": "1.0.15"
+    "com.ivanmurzak.unity.mcp.tilemap": "1.0.15",
+    "com.ivanmurzak.unity.mcp.animation": "1.2.30",
+    "com.ivanmurzak.unity.mcp.particlesystem": "1.2.30"
   },
   "scopedRegistries": [
     {
