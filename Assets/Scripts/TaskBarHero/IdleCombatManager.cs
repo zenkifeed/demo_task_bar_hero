@@ -39,6 +39,9 @@ public class IdleCombatManager : MonoBehaviour
     private const string AnimDefeat = "Defeat";
     private Coroutine returnToIdleRoutine;
 
+    [Header("Floating Combat Text")]
+    public Canvas mainCanvas;
+
     [Header("Skill Tree")]
     public SkillTreeManager skillTree;
     public GameObject skillTreePanel;
@@ -92,6 +95,22 @@ public class IdleCombatManager : MonoBehaviour
         RefreshUI();
     }
 
+    private void SpawnFloatingText(Vector3 worldPos, string text, Color color, int fontSize = 18)
+    {
+        if (mainCanvas == null) return;
+        var camera = Camera.main;
+        if (camera == null) return;
+
+        var canvasRect = mainCanvas.transform as RectTransform;
+        Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(camera, worldPos);
+        var eventCamera = mainCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : camera;
+
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRect, screenPoint, eventCamera, out var localPoint))
+        {
+            FloatingCombatText.Spawn(canvasRect, localPoint, text, color, fontSize);
+        }
+    }
+
     private float EffectiveAttack => attack * (skillTree != null ? skillTree.AttackMultiplier : 1f);
     private float EffectiveMaxHp => maxHp * (skillTree != null ? skillTree.HpMultiplier : 1f);
     private float EffectiveAttackInterval => Mathf.Max(0.2f, attackInterval * (skillTree != null ? skillTree.IntervalMultiplier : 1f));
@@ -136,6 +155,7 @@ public class IdleCombatManager : MonoBehaviour
             currentHp -= _enemyAttack;
             Log($"{_enemyName} hits {heroName} for {_enemyAttack:0} dmg.");
             PlayEnemyAnim("Attack", 0.5f);
+            if (heroParts != null) SpawnFloatingText(heroParts.transform.position + Vector3.up * 1.3f, $"-{_enemyAttack:0}", new Color(1f, 0.25f, 0.25f));
             if (currentHp <= 0f)
             {
                 OnHeroDefeated();
@@ -152,6 +172,12 @@ public class IdleCombatManager : MonoBehaviour
         string suffix = isCrit ? " (CRIT!)" : bonusHit ? " (bonus hit!)" : "";
         Log($"{heroName} hits {_enemyName} for {dmg:0} dmg{suffix}.");
         PlayHeroAnim(AnimAttack, 0.5f);
+
+        if (_enemyVisual != null)
+        {
+            Color color = isCrit ? new Color(1f, 0.55f, 0.1f) : Color.white;
+            SpawnFloatingText(_enemyVisual.transform.position + Vector3.up * 0.6f, isCrit ? $"-{dmg:0}!" : $"-{dmg:0}", color, isCrit ? 40 : 30);
+        }
     }
 
     private void OnEnemyDefeated()
@@ -165,6 +191,11 @@ public class IdleCombatManager : MonoBehaviour
         GainXp(xpGain);
 
         Log($"{_enemyName} defeated! +{goldGain}g{(doubleGold ? " (DOUBLE!)" : "")} +{Mathf.RoundToInt(xpGain)}xp");
+        if (_enemyVisual != null)
+        {
+            string goldSuffix = doubleGold ? "!!" : "";
+            SpawnFloatingText(_enemyVisual.transform.position + Vector3.up * 0.3f, $"+{goldGain}g{goldSuffix}", new Color(1f, 0.85f, 0.3f));
+        }
         PlayHeroAnim(AnimVictory, 0.6f);
         if (_enemyAnimator != null) _enemyAnimator.Play("Dead");
         _enemyTier++;
