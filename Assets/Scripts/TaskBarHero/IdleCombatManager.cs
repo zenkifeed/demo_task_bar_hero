@@ -39,6 +39,14 @@ public class IdleCombatManager : MonoBehaviour
     private const string AnimDefeat = "Defeat";
     private Coroutine returnToIdleRoutine;
 
+    [Header("Skill Tree")]
+    public SkillTreeManager skillTree;
+    public GameObject skillTreePanel;
+    public Text[] skillNameTexts = new Text[SkillTreeManager.BranchCount];
+    public Text[] skillLevelTexts = new Text[SkillTreeManager.BranchCount];
+    public Text[] skillCostTexts = new Text[SkillTreeManager.BranchCount];
+    public Button[] skillUpgradeButtons = new Button[SkillTreeManager.BranchCount];
+
     [Header("UI References")]
     public Text heroNameLevelText;
     public Slider heroHpSlider;
@@ -84,23 +92,41 @@ public class IdleCombatManager : MonoBehaviour
         RefreshUI();
     }
 
+    private float EffectiveAttack => attack * (skillTree != null ? skillTree.AttackMultiplier : 1f);
+    private float EffectiveMaxHp => maxHp * (skillTree != null ? skillTree.HpMultiplier : 1f);
+    private float EffectiveAttackInterval => Mathf.Max(0.2f, attackInterval * (skillTree != null ? skillTree.IntervalMultiplier : 1f));
+
     private void HandleCombat(float dt)
     {
+        if (skillTree != null && skillTree.HpRegenActive && currentHp < EffectiveMaxHp)
+        {
+            currentHp = Mathf.Min(EffectiveMaxHp, currentHp + EffectiveMaxHp * 0.01f * dt);
+        }
+
         if (_enemyDefeated) return;
 
         _heroAttackTimer -= dt;
         if (_heroAttackTimer <= 0f)
         {
-            _heroAttackTimer += attackInterval;
-            _enemyCurrentHp -= attack;
-            Log($"{heroName} hits {_enemyName} for {attack:0} dmg.");
-            PlayHeroAnim(AnimAttack, 0.5f);
+            _heroAttackTimer += EffectiveAttackInterval;
+            DealHeroDamage();
             if (_enemyCurrentHp <= 0f)
             {
                 OnEnemyDefeated();
                 return;
             }
             PlayEnemyAnim("Hit", 0.35f);
+
+            if (skillTree != null && skillTree.DoubleAttackActive && Random.value < 0.15f)
+            {
+                DealHeroDamage(bonusHit: true);
+                if (_enemyCurrentHp <= 0f)
+                {
+                    OnEnemyDefeated();
+                    return;
+                }
+                PlayEnemyAnim("Hit", 0.35f);
+            }
         }
 
         _enemyAttackTimer -= dt;
@@ -117,11 +143,28 @@ public class IdleCombatManager : MonoBehaviour
         }
     }
 
+    private void DealHeroDamage(bool bonusHit = false)
+    {
+        float dmg = EffectiveAttack;
+        bool isCrit = skillTree != null && skillTree.CritChanceActive && Random.value < 0.10f;
+        if (isCrit) dmg *= 2f;
+        _enemyCurrentHp -= dmg;
+        string suffix = isCrit ? " (CRIT!)" : bonusHit ? " (bonus hit!)" : "";
+        Log($"{heroName} hits {_enemyName} for {dmg:0} dmg{suffix}.");
+        PlayHeroAnim(AnimAttack, 0.5f);
+    }
+
     private void OnEnemyDefeated()
     {
-        gold += Mathf.RoundToInt(_enemyGoldReward);
-        GainXp(_enemyXpReward);
-        Log($"{_enemyName} defeated! +{Mathf.RoundToInt(_enemyGoldReward)}g +{Mathf.RoundToInt(_enemyXpReward)}xp");
+        int goldGain = Mathf.RoundToInt(_enemyGoldReward * (skillTree != null ? skillTree.GoldMultiplier : 1f));
+        bool doubleGold = skillTree != null && skillTree.DoubleGoldActive && Random.value < 0.10f;
+        if (doubleGold) goldGain *= 2;
+        gold += goldGain;
+
+        float xpGain = _enemyXpReward * (skillTree != null ? skillTree.XpMultiplier : 1f);
+        GainXp(xpGain);
+
+        Log($"{_enemyName} defeated! +{goldGain}g{(doubleGold ? " (DOUBLE!)" : "")} +{Mathf.RoundToInt(xpGain)}xp");
         PlayHeroAnim(AnimVictory, 0.6f);
         if (_enemyAnimator != null) _enemyAnimator.Play("Dead");
         _enemyTier++;
@@ -140,7 +183,7 @@ public class IdleCombatManager : MonoBehaviour
     {
         int lost = Mathf.RoundToInt(gold * 0.2f);
         gold -= lost;
-        currentHp = maxHp;
+        currentHp = EffectiveMaxHp;
         _enemyTier = Mathf.Max(0, _enemyTier - 1);
         Log($"{heroName} was defeated! Lost {lost}g. Patched up and back at it.");
         PlayHeroAnim(AnimDefeat, 0.9f);
@@ -185,9 +228,10 @@ public class IdleCombatManager : MonoBehaviour
             level++;
             maxHp += 8f;
             attack += 1.5f;
-            currentHp = maxHp;
+            currentHp = EffectiveMaxHp;
             xpToNextLevel = 20f + level * 15f;
-            Log($"Level up! {heroName} is now level {level}.");
+            string compileMsg = skillTree != null && skillTree.CompileMessageActive ? " \"Compiled successfully!\"" : "";
+            Log($"Level up! {heroName} is now level {level}.{compileMsg}");
         }
     }
 
@@ -225,17 +269,55 @@ public class IdleCombatManager : MonoBehaviour
         if (logText != null) logText.text = string.Join("\n", _logLines.ToArray());
     }
 
+    public void ToggleSkillTreePanel()
+    {
+        if (skillTreePanel != null) skillTreePanel.SetActive(!skillTreePanel.activeSelf);
+    }
+
+    public void UpgradeSkill(int branchIndex)
+    {
+        if (skillTree == null) return;
+        var branch = (SkillBranch)branchIndex;
+        int cost = skillTree.GetUpgradeCost(branch);
+        if (cost < 0 || gold < cost) return;
+        gold -= cost;
+        skillTree.IncrementLevel(branch);
+        Log($"Upgraded {SkillTreeManager.DisplayNames[branchIndex]} to Lv.{skillTree.GetLevel(branch)}!");
+    }
+
+    private void RefreshSkillTreeUI()
+    {
+        if (skillTree == null) return;
+        for (int i = 0; i < SkillTreeManager.BranchCount; i++)
+        {
+            var branch = (SkillBranch)i;
+            int level = skillTree.GetLevel(branch);
+            int cost = skillTree.GetUpgradeCost(branch);
+            bool maxed = cost < 0;
+
+            if (i < skillNameTexts.Length && skillNameTexts[i] != null)
+                skillNameTexts[i].text = $"{SkillTreeManager.DisplayNames[i]}\n{SkillTreeManager.FlavorText[i]}";
+            if (i < skillLevelTexts.Length && skillLevelTexts[i] != null)
+                skillLevelTexts[i].text = maxed ? $"Lv.{level}/{SkillTreeManager.MaxLevel} (MAX)" : $"Lv.{level}/{SkillTreeManager.MaxLevel}";
+            if (i < skillCostTexts.Length && skillCostTexts[i] != null)
+                skillCostTexts[i].text = maxed ? SkillTreeManager.CapstoneText[i] : $"Cost: {cost}g";
+            if (i < skillUpgradeButtons.Length && skillUpgradeButtons[i] != null)
+                skillUpgradeButtons[i].interactable = !maxed && gold >= cost;
+        }
+    }
+
     private void RefreshUI()
     {
         if (heroNameLevelText != null) heroNameLevelText.text = $"{heroName} — Lv.{level}";
-        if (heroHpSlider != null) { heroHpSlider.maxValue = maxHp; heroHpSlider.value = currentHp; }
-        if (heroHpText != null) heroHpText.text = $"{Mathf.CeilToInt(currentHp)}/{Mathf.CeilToInt(maxHp)}";
+        if (heroHpSlider != null) { heroHpSlider.maxValue = EffectiveMaxHp; heroHpSlider.value = currentHp; }
+        if (heroHpText != null) heroHpText.text = $"{Mathf.CeilToInt(currentHp)}/{Mathf.CeilToInt(EffectiveMaxHp)}";
         if (heroXpSlider != null) { heroXpSlider.maxValue = xpToNextLevel; heroXpSlider.value = xp; }
         if (heroXpText != null) heroXpText.text = $"{Mathf.FloorToInt(xp)}/{Mathf.CeilToInt(xpToNextLevel)} XP";
         if (enemyNameText != null) enemyNameText.text = _enemyName;
         if (enemyHpSlider != null) { enemyHpSlider.maxValue = _enemyMaxHp; enemyHpSlider.value = Mathf.Max(0f, _enemyCurrentHp); }
         if (enemyHpText != null) enemyHpText.text = $"{Mathf.CeilToInt(Mathf.Max(0f, _enemyCurrentHp))}/{Mathf.CeilToInt(_enemyMaxHp)}";
         if (goldText != null) goldText.text = $"Gold: {gold}";
+        RefreshSkillTreeUI();
         if (sessionTimeText != null)
         {
             float t = Time.timeSinceLevelLoad;
