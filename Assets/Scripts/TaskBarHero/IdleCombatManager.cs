@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 using LayerLab.ArtMakerUnity;
 
 // Idle auto-battler: hero and enemy trade blows on independent timers.
@@ -26,6 +27,8 @@ public class IdleCombatManager : MonoBehaviour
     [Header("Enemy Visual")]
     public GameObject[] enemyPrefabs;
     public Transform enemySpawnPoint;
+    public float enemyVisualScale = 0.65f;
+    public GameObject enemyHitVfxPrefab;
     private GameObject _enemyVisual;
     private Animator _enemyAnimator;
     private bool _enemyDefeated;
@@ -45,23 +48,23 @@ public class IdleCombatManager : MonoBehaviour
     [Header("Skill Tree")]
     public SkillTreeManager skillTree;
     public GameObject skillTreePanel;
-    public Text[] skillNameTexts = new Text[SkillTreeManager.BranchCount];
-    public Text[] skillLevelTexts = new Text[SkillTreeManager.BranchCount];
-    public Text[] skillCostTexts = new Text[SkillTreeManager.BranchCount];
+    public TMP_Text[] skillNameTexts = new TMP_Text[SkillTreeManager.BranchCount];
+    public TMP_Text[] skillLevelTexts = new TMP_Text[SkillTreeManager.BranchCount];
+    public TMP_Text[] skillCostTexts = new TMP_Text[SkillTreeManager.BranchCount];
     public Button[] skillUpgradeButtons = new Button[SkillTreeManager.BranchCount];
 
     [Header("UI References")]
-    public Text heroNameLevelText;
+    public TMP_Text heroNameLevelText;
     public Slider heroHpSlider;
-    public Text heroHpText;
+    public TMP_Text heroHpText;
     public Slider heroXpSlider;
-    public Text heroXpText;
-    public Text enemyNameText;
+    public TMP_Text heroXpText;
+    public TMP_Text enemyNameText;
     public Slider enemyHpSlider;
-    public Text enemyHpText;
-    public Text goldText;
-    public Text sessionTimeText;
-    public Text logText;
+    public TMP_Text enemyHpText;
+    public TMP_Text goldText;
+    public TMP_Text sessionTimeText;
+    public TMP_Text logText;
 
     private static readonly string[] EnemyNames =
     {
@@ -177,6 +180,7 @@ public class IdleCombatManager : MonoBehaviour
         {
             Color color = isCrit ? new Color(1f, 0.55f, 0.1f) : Color.white;
             SpawnFloatingText(_enemyVisual.transform.position + Vector3.up * 0.6f, isCrit ? $"-{dmg:0}!" : $"-{dmg:0}", color, isCrit ? 40 : 30);
+            if (enemyHitVfxPrefab != null) Instantiate(enemyHitVfxPrefab, _enemyVisual.transform.position + Vector3.up * 0.3f, Quaternion.identity);
         }
     }
 
@@ -287,6 +291,7 @@ public class IdleCombatManager : MonoBehaviour
             {
                 Vector3 pos = enemySpawnPoint != null ? enemySpawnPoint.position : Vector3.zero;
                 _enemyVisual = Instantiate(prefab, pos, Quaternion.identity);
+                _enemyVisual.transform.localScale = Vector3.one * enemyVisualScale;
                 _enemyAnimator = _enemyVisual.GetComponentInChildren<Animator>();
                 if (_enemyAnimator != null) _enemyAnimator.Play(AnimIdle);
             }
